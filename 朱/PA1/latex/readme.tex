@@ -1,0 +1,212 @@
+\documentclass{ctexart}
+\usepackage{amsmath, mathrsfs, amsfonts}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subcaption}
+\usepackage{adjustbox}
+\usepackage{titlesec}
+\usepackage{geometry}
+\usepackage{listings}
+\geometry{left=2cm, right=2cm, top=2cm, bottom=2cm}
+% library
+\usetikzlibrary{trees,mindmap,positioning}
+% 修改图标题的格式
+\captionsetup[figure]{name=Fig.,labelsep=period}
+% 自定义section标题格式
+\titleformat{\section}
+  {\normalfont\large\bfseries} % 节标题的字体样式
+  {\thesection} % 节编号
+  {2em} % 节编号和标题文本之间的距离
+  {} % 节标题前的代码，留空表示无额外代码
+
+\lstset{
+    language=C++, % 设置语言为cpp
+    basicstyle=\ttfamily, % 使用等宽字体
+    keywordstyle=\color{red}, % 关键词颜色
+    commentstyle=\color{green}, % 注释颜色
+    stringstyle=\color{violet}, % 字符串颜色
+    breaklines=true, % 自动换行
+    numbers=left, % 行号在左侧显示
+    numberstyle=\tiny\color{gray}, % 行号样式
+    %frame=single, % 代码框线样式
+    showstringspaces=false 
+}
+
+\begin{document}
+
+\begin{center}
+    \begin{tabular}{ccc}
+    \Large{编译原理PA1} \\
+    20238132022 物联网2班 朱彦渊 \\
+    \today
+    
+    \end{tabular}
+    \end{center}
+所选数据结构： 队列\\
+
+所有代码均保存在queue.cl中。由于在linux console下使用中文输入可能会导致乱码（本来写了，但是写完注释后面居然自动乱了，直接又跑不了了TAT,后面改了好久才回来），所以不在代码中写注释，对部分代码的解释转到文档中进行。
+代码分为三个部分，分别是Node类 Queue类 和Main类。其中Node作为Queue的节点，有Data和Next两个变量。Queue为队列本身，有head，tail，size三个变量，以及课件要求的功能函数.
+cool语言的类中的变量应该默认为private的，所以在定义Node类的时候我使用了setNext(),  getData(), getNext()三个函数进行辅助。由于偷懒，队列的元素默认为Int型，如果使用Object型的话，应该要在输出的时候分类调用不同的IO方法。
+Main函数用于测试队列，该程序的运行结果如下图所示，符合课件要求的最小功能集.
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{res.png}
+    \caption{程序运行结果图}
+\end{figure}
+
+\indent 完整代码如下:\\
+
+\begin{lstlisting}
+    -- 队列节点
+class Node inherits Object{
+  data : Int;
+  next : Node;
+
+  init(d : Int, n : Node) : Node {
+    {
+      data <- d;
+      next <- n;
+      self;
+    }
+  };
+
+  setNext( n : Node) : Object{
+    {
+      next <- n;
+      self;
+    }
+  };
+
+  getData() : Int{
+    data
+  };
+
+  getNext() : Node{
+    next
+  };
+
+};
+
+--队列
+class Queue inherits IO{
+  head : Node;
+  tail : Node;
+  size : Int;
+  init() :  Queue{
+    {
+      size <- 0;
+      self;
+    }
+  };
+
+  isEmpty() : Bool {
+    isvoid head
+  };
+
+  enqueue (data : Int) : Object {
+    {
+    let n : Node in 
+    let newNode : Node <- (new Node).init(data, n) in
+    {
+      if isEmpty() then{
+        head <- newNode;
+        tail <- newNode;
+      }
+      else{
+        tail.setNext(newNode);
+        tail <- newNode;
+      }fi;
+
+      size <- size + 1;
+    };
+    }
+  };
+
+  dequeue () : Int{
+    if isEmpty() then
+      {
+        out_string("Error! Can't dequeue an empty queue!\n");
+        0;
+      }
+    else{
+      let data2rm : Int <- head.getData() in {
+        head <- head.getNext();
+        size <- size - 1;
+
+        data2rm;
+      };
+    }
+    fi
+  };
+
+
+  front () : Int{
+    if isEmpty() then
+      {
+        out_string("Error! Empty queue!\n");
+        0;
+      }
+    else{
+      head.getData();
+    }
+    fi
+  };
+
+
+  print () : Object {
+    if isEmpty() then{
+      out_string("empty queue!\n");
+    }
+    else{
+      let curr : Node <- head in{
+        out_string("the elemnets in the queue:\n");
+        while not (isvoid curr) loop{
+          out_int(curr.getData());
+          out_string(" ");
+          curr <- curr.getNext();
+        }pool;
+        out_string("\n");
+        out_string("size of the queue: ");
+        out_int(size);
+        out_string("\n");
+      };
+    } fi
+    
+  };
+};
+
+-- Main函数,用于测试.
+class Main inherits IO {
+  main() : Object {
+    let q : Queue <- new Queue in {
+
+      if q.isEmpty() then 
+        out_string("empty queue.\n")
+      else
+        out_string("not empty.\n")
+      fi;
+
+      out_string("enqueued : 1,2,3\n");
+      q.enqueue(1);
+      q.enqueue(2);
+      q.enqueue(3);
+      q.print();
+
+      out_string("the front of the queue is : ");
+      out_int(q.front());
+      out_string("\n");
+      q.print();
+
+      q.dequeue();
+      out_string("after dequeue: ");
+      q.print();
+
+
+    }
+  };
+};
+
+
+\end{lstlisting}
+\end{document}

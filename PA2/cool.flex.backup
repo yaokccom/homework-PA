@@ -1,0 +1,334 @@
+/*
+ * COOL 语言的词法分析器定义
+ */
+
+/*
+ * 在 %{ %} 中包围的内容会被原样复制到输出文件中，
+ * 因此头文件和全局定义放在这里，让文件中的代码可以看见。
+ * 不要移除任何初始就存在的内容。
+ */
+%{
+#include <cool-parse.h>
+#include <stringtab.h>
+#include <utilities.h>
+
+/* 编译器假定使用这些标识符 */
+#define yylval cool_yylval
+#define yylex  cool_yylex
+
+/* 字符串常量的最大长度 */
+#define MAX_STR_CONST 1025
+#define YY_NO_UNPUT   /* 让 g++ 保持安静 */
+
+extern FILE *fin; /* 我们从这个文件读取输入 */
+
+/* 定义 YY_INPUT 以便我们从 FILE fin 读取：
+ * 这个改动使得可以在 Cool 编译器中使用此扫描器。
+ */
+#undef YY_INPUT
+#define YY_INPUT(buf,result,max_size) \
+	if ( (result = fread( (char*)buf, sizeof(char), max_size, fin)) < 0) \
+		YY_FATAL_ERROR( "在 flex 扫描器中 read() 失败");
+
+char string_buf[MAX_STR_CONST]; /* 用于组装字符串常量 */
+char *string_buf_ptr;
+
+extern int curr_lineno;     /* 当前行号 */
+extern int verbose_flag;    /* 详细模式标志 */
+
+extern YYSTYPE cool_yylval; /* 词法分析器与语法分析器之间传递值的变量 */
+
+/*
+ * 在此处添加您自己的定义
+ */
+static int comment_depth = 0;  /* 注释嵌套深度 */
+%}
+
+/*
+ * 在此处定义正则表达式的名称
+ */
+DARROW          =>    /* 双箭头 */
+ASSIGN          <-    /* 赋值操作符 */
+LE              <=    /* 小于等于 */
+DIGIT           [0-9] /* 数字 */
+LOWER           [a-z] /* 小写字母 */
+UPPER           [A-Z] /* 大写字母 */
+LETTER          [a-zA-Z] /* 字母 */
+ALNUM           [a-zA-Z0-9_] /* 字母数字和下划线 */
+WHITESPACE      [ \t\r\f\v] /* 空白字符 */
+
+%x COMMENT  /* 注释状态（独占） */
+%x STRING   /* 字符串状态（独占） */
+
+%%
+
+ /*
+  * 嵌套注释处理
+  */
+
+"(*"    {
+    /* 进入注释状态，初始化嵌套深度 */
+    BEGIN(COMMENT);
+    comment_depth = 1;
+}
+
+<COMMENT>"(*"   {
+    /* 遇到嵌套注释开始，深度增加 */
+    comment_depth++;
+}
+
+<COMMENT>"*)"   {
+    /* 遇到注释结束，深度减少 */
+    comment_depth--;
+    if (comment_depth == 0) {
+        /* 如果深度为0，返回初始状态 */
+        BEGIN(INITIAL);
+    }
+}
+
+<COMMENT>\n     {
+    /* 注释中的换行，行号增加 */
+    curr_lineno++;
+}
+
+<COMMENT><<EOF>> {
+    /* 在注释中遇到文件结束 */
+    cool_yylval.error_msg = "EOF in comment";
+    BEGIN(INITIAL);
+    return ERROR;
+}
+
+<COMMENT>.      {
+    /* 忽略注释中的所有字符 */
+}
+
+"*)"    {
+    /* 未匹配的注释结束符 */
+    cool_yylval.error_msg = "Unmatched *)";
+    return ERROR;
+}
+
+"--".*          {
+    /* 单行注释，忽略直到行尾的所有内容 */
+}
+
+ /*
+  * 多字符操作符
+  */
+{DARROW}		{ return (DARROW); }  /* => */
+{ASSIGN}		{ return (ASSIGN); }  /* <- */
+{LE}		    { return (LE); }      /* <= */
+
+ /*
+  * 关键字（大小写不敏感），除了 true 和 false 必须小写字母开头
+  */
+
+[cC][lL][aA][sS][sS]		{ return (CLASS); }      /* class */
+[eE][lL][sS][eE]		    { return (ELSE); }       /* else */
+[fF][iI]			        { return (FI); }         /* fi */
+[iI][fF]			        { return (IF); }         /* if */
+[iI][nN]			        { return (IN); }         /* in */
+[iI][nN][hH][eE][rR][iI][tT][sS]	{ return (INHERITS); }  /* inherits */
+[iI][sS][vV][oO][iI][dD]		{ return (ISVOID); }     /* isvoid */
+[lL][eE][tT]		        { return (LET); }        /* let */
+[lL][oO][oO][pP]		    { return (LOOP); }       /* loop */
+[pP][oO][oO][lL]		    { return (POOL); }       /* pool */
+[tT][hH][eE][nN]		    { return (THEN); }       /* then */
+[wW][hH][iI][lL][eE]		{ return (WHILE); }      /* while */
+[cC][aA][sS][eE]		    { return (CASE); }       /* case */
+[eE][sS][aA][cC]		    { return (ESAC); }       /* esac */
+[nN][eE][wW]		        { return (NEW); }        /* new */
+[oO][fF]			        { return (OF); }         /* of */
+[nN][oO][tT]		        { return (NOT); }        /* not */
+
+ /*
+  * 布尔常量
+  */
+t[rR][uU][eE]               {
+    /* 布尔值 true */
+    cool_yylval.boolean = 1;
+    return (BOOL_CONST);
+}
+
+f[aA][lL][sS][eE]           {
+    /* 布尔值 false */
+    cool_yylval.boolean = 0;
+    return (BOOL_CONST);
+}
+
+ /*
+  * 标识符
+  */
+{UPPER}{ALNUM}*     {
+    /* 类型标识符（大写字母开头） */
+    cool_yylval.symbol = stringtable.add_string(yytext);
+    return (TYPEID);
+}
+
+{LOWER}{ALNUM}*     {
+    /* 对象标识符（小写字母开头） */
+    cool_yylval.symbol = stringtable.add_string(yytext);
+    return (OBJECTID);
+}
+
+ /*
+  * 整数常量
+  */
+{DIGIT}+            {
+    /* 整数常量 */
+    cool_yylval.symbol = stringtable.add_string(yytext);
+    return (INT_CONST);
+}
+
+ /*
+  * 字符串常量（C 语法）
+  * 转义序列 \c 对所有字符 c 都接受。除了
+  * \n \t \b \f，结果就是 c 本身。
+  *
+  */
+
+\"                  {
+    /* 进入字符串状态，初始化字符串缓冲区指针 */
+    BEGIN(STRING);
+    string_buf_ptr = string_buf;
+}
+
+<STRING>\"          {
+    /* 字符串结束，返回初始状态 */
+    BEGIN(INITIAL);
+    *string_buf_ptr = '\0';
+
+    /* 检查字符串长度 */
+    if (string_buf_ptr - string_buf >= MAX_STR_CONST) {
+        cool_yylval.error_msg = "String constant too long";
+        return ERROR;
+    }
+
+    cool_yylval.symbol = stringtable.add_string(string_buf);
+    return (STR_CONST);
+}
+
+<STRING>\n          {
+    /* 字符串中遇到换行（未终止的字符串） */
+    curr_lineno++;
+    BEGIN(INITIAL);
+    cool_yylval.error_msg = "Unterminated string constant";
+    return ERROR;
+}
+
+<STRING><<EOF>>     {
+    /* 在字符串中遇到文件结束 */
+    BEGIN(INITIAL);
+    cool_yylval.error_msg = "EOF in string constant";
+    return ERROR;
+}
+
+<STRING>\\\n        {
+    /* 字符串中的转义换行 */
+    curr_lineno++;
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = '\n';
+    }
+}
+
+<STRING>\\n         {
+    /* 转义字符：换行 */
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = '\n';
+    }
+}
+
+<STRING>\\t         {
+    /* 转义字符：制表符 */
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = '\t';
+    }
+}
+
+<STRING>\\b         {
+    /* 转义字符：退格 */
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = '\b';
+    }
+}
+
+<STRING>\\f         {
+    /* 转义字符：换页 */
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = '\f';
+    }
+}
+
+<STRING>\\[^\0]     {
+    /* 任何其他转义字符 */
+    if (string_buf_ptr - string_buf < MAX_STR_CONST - 1) {
+        *string_buf_ptr++ = yytext[1];
+    }
+}
+
+<STRING>\0          {
+    /* 字符串中包含空字符 */
+    cool_yylval.error_msg = "String contains null character";
+    BEGIN(INITIAL);
+    return ERROR;
+}
+
+<STRING>\\0         {
+    /* 转义的空字符 */
+    cool_yylval.error_msg = "String contains null character";
+    BEGIN(INITIAL);
+    return ERROR;
+}
+
+<STRING>.           {
+    /* 字符串中的普通字符 */
+    if (yytext[0] == '\0') {
+        cool_yylval.error_msg = "String contains null character";
+        BEGIN(INITIAL);
+        return ERROR;
+    }
+
+    if (string_buf_ptr - string_buf >= MAX_STR_CONST - 1) {
+        cool_yylval.error_msg = "String constant too long";
+        BEGIN(INITIAL);
+        return ERROR;
+    }
+
+    *string_buf_ptr++ = yytext[0];
+}
+
+ /*
+  * 单字符操作符和标点符号
+  */
+"+"					{ return '+'; }  /* 加 */
+"-"					{ return '-'; }  /* 减 */
+"*"					{ return '*'; }  /* 乘 */
+"/"					{ return '/'; }  /* 除 */
+"~"					{ return '~'; }  /* 取反 */
+"<"					{ return '<'; }  /* 小于 */
+"="					{ return '='; }  /* 等于 */
+"."					{ return '.'; }  /* 点 */
+"@"					{ return '@'; }  /* at符号 */
+","					{ return ','; }  /* 逗号 */
+":"					{ return ':'; }  /* 冒号 */
+";"					{ return ';'; }  /* 分号 */
+"("					{ return '('; }  /* 左括号 */
+")"					{ return ')'; }  /* 右括号 */
+"{"					{ return '{'; }  /* 左花括号 */
+"}"					{ return '}'; }  /* 右花括号 */
+
+ /*
+  * 空白字符和换行
+  */
+{WHITESPACE}+       { /* 忽略空白字符 */ }
+\n                  { curr_lineno++; }  /* 换行，行号增加 */
+
+ /*
+  * 错误处理 - 捕获任何未匹配的字符
+  */
+.                   {
+    cool_yylval.error_msg = yytext;
+    return ERROR;
+}
+
+%%
